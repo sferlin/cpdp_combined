@@ -1,9 +1,13 @@
 import re
 import subprocess
 import threading
+import csv
+import os
 
+#NB: Crucible runs have to last longer than kube-burner-ocp runs.
 START_CRUCIBLE_SCRIPT = './test/dummy-crucible.sh'
 START_KUBEBURNEROCP_SCRIPT = './test/dummy-kubeburnerocp.sh'
+FILE_CSV = "/root/sferlin/cpdp_combine_run/CPCDP_COMBINED.csv"
 
 # Roadblock: Fri Apr 11 07:30:02 UTC 2025 role: leader attempt number: 1 uuid: 1:df668962-5f49-421b-a35c-767dc78996f0:1-1-1:client-start-end
 crucible_start_message_regex = re.compile(r"uuid: \d+:(.*):\d+-\d+-\d+:client-start-end")
@@ -75,6 +79,7 @@ def _crucible_handler(line):
         if not kubeburnerocp_thread:
             raise Exception("kubeburnerocp was not started!")
         if kubeburnerocp_thread.is_alive():
+            # Crucible runs have to last longer than kube-burner-ocp runs
             raise Exception("kubeburnerocp has not finished!")
         kubeburnerocp_thread.join()
         kubeburnerocp_thread = None
@@ -92,6 +97,12 @@ def measure():
         raise Exception("Did not get a UUID from crucible!")
     if not kubeburnerocp_uuid:
         raise Exception("Did not get a UUID from kubeburnerocp!")
+    
+    # Let's put this now in a file and keep UUID pairs together
+    with open(FILE_CSV,'w', newline='') as file:
+        writer = csv.writer(file, delimiter=',')
+        writer.writerow([os.environ['PPN'], os.environ['CHURN_PERCENT'], os.environ['CHURN_DURATION'], 'crucible: ', crucible_uuid, 'kube-burner-ocp: ', kubeburnerocp_uuid])
+
     return crucible_uuid, kubeburnerocp_uuid
 
 
