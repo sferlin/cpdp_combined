@@ -1,13 +1,24 @@
+import argparse
 import re
 import subprocess
 import threading
+import traceback
 import csv
-import os
+from datetime import datetime
 
-#NB: Crucible runs have to last longer than kube-burner-ocp runs.
+CHURN_CYCLES='5'
+PPN='50'
+
 START_CRUCIBLE_SCRIPT = './test/dummy-crucible.sh'
 START_KUBEBURNEROCP_SCRIPT = './test/dummy-kubeburnerocp.sh'
-FILE_CSV = "/root/sferlin/cpdp_combine_run/CPCDP_COMBINED.csv"
+FILE_CSV = "CPDP_COMBINED.csv"
+
+parser = argparse.ArgumentParser()
+parser.add_argument("churn_percent", help="churn percent to use in measurement", type=int)
+args = parser.parse_args()
+
+if args.churn_percent < 0 or args.churn_percent > 100:
+    raise Exception(f"Invalid churn_percent {args.churn_percent}!")
 
 # Roadblock: Fri Apr 11 07:30:02 UTC 2025 role: leader attempt number: 1 uuid: 1:df668962-5f49-421b-a35c-767dc78996f0:1-1-1:client-start-end
 crucible_start_message_regex = re.compile(r"uuid: \d+:(.*):\d+-\d+-\d+:client-start-end")
@@ -41,22 +52,29 @@ def _start(cmd):
 def _follow(name, cmd, line_handler):
     p = _start(cmd)
     print(f"----- STARTED {name}. PID: {p.pid}")
+    had_error = None
     try:
         while True:
             line = p.stdout.readline()
             if line:
                 print(line, end='')
-                line_handler(line)
+                try:
+                    if not had_error:
+                        line_handler(line)
+                except Exception as e:
+                    had_error = e
+                    traceback.print_exc()
             elif p.poll() is not None:
                 break
     finally:
         if p.returncode is None: p.terminate()
         p.wait()
+        if had_error: raise had_error
 
 def _kubeburnerocp_thread_main(lines):
     def handler(line):
         lines.append(line)
-    _follow('kubeburnerocp', ['/bin/bash', START_KUBEBURNEROCP_SCRIPT], handler)
+    _follow('kubeburnerocp', ['/bin/bash', START_KUBEBURNEROCP_SCRIPT, CHURN_CYCLES, str(args.churn_percent), PPN], handler)
 
 crucible_uuid = None
 kubeburnerocp_uuid = None
@@ -78,11 +96,14 @@ def _crucible_handler(line):
         crucible_uuid = _get_crucible_uuid(line)
         if not kubeburnerocp_thread:
             raise Exception("kubeburnerocp was not started!")
-        if kubeburnerocp_thread.is_alive():
-            # Crucible runs have to last longer than kube-burner-ocp runs
-            raise Exception("kubeburnerocp has not finished!")
+        still_alive = kubeburnerocp_thread.is_alive()
+        if still_alive:
+            print('Crucible is done, waiting for still running kubeburnerocp')
         kubeburnerocp_thread.join()
         kubeburnerocp_thread = None
+        if still_alive:
+            # Crucible runs have to last longer than kube-burner-ocp runs
+            raise Exception("kubeburnerocp has not finished!")
         kubeburnerocp_uuid = _get_kubeburnerocp_uuid(kubeburnerocp_lines)
 
 def measure():
@@ -91,6 +112,9 @@ def measure():
     crucible_uuid = None
     kubeburnerocp_uuid = None
 
+    print(f'Starting with churn_percent={args.churn_percent}')
+
+    #NB: Crucible runs have to last longer than kube-burner-ocp runs
     _follow('crucible', ['/bin/bash', START_CRUCIBLE_SCRIPT], _crucible_handler)
 
     if not crucible_uuid:
@@ -99,9 +123,9 @@ def measure():
         raise Exception("Did not get a UUID from kubeburnerocp!")
     
     # Let's put this now in a file and keep UUID pairs together
-    with open(FILE_CSV,'w', newline='') as file:
-        writer = csv.writer(file, delimiter=',')
-        writer.writerow([os.environ['PPN'], os.environ['CHURN_PERCENT'], os.environ['CHURN_DURATION'], 'crucible: ', crucible_uuid, 'kube-burner-ocp: ', kubeburnerocp_uuid])
+    with open(FILE_CSV,'a', newline='') as file:
+        writer = csv.writer(file, delimiter='\t')
+        writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), CHURN_CYCLES, args.churn_percent, PPN, crucible_uuid, kubeburnerocp_uuid])
 
     return crucible_uuid, kubeburnerocp_uuid
 
