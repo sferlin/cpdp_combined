@@ -9,8 +9,8 @@ from datetime import datetime
 CHURN_CYCLES='5'
 PPN='50'
 
-START_CRUCIBLE_SCRIPT = './start_crucible.sh'
-START_KUBEBURNEROCP_SCRIPT = './start_kubeburnerorcp.sh'
+START_CRUCIBLE_SCRIPT = './start_crucible.sh' #'./test/dummy-crucible.sh'
+START_KUBEBURNEROCP_SCRIPT = './start_kubeburnerocp.sh' #'./test/dummy-kubeburnerocp.sh'
 FILE_CSV = "CPDP_COMBINED.csv"
 
 parser = argparse.ArgumentParser()
@@ -25,7 +25,7 @@ crucible_start_message_regex = re.compile(r"uuid: \d+:(.*):\d+-\d+-\d+:client-st
 # Roadblock: Fri Apr 11 07:40:07 UTC 2025 role: leader attempt number: 1 uuid: 1:df668962-5f49-421b-a35c-767dc78996f0:1-1-1:client-stop-begin
 crucible_end_message_regex = re.compile(r"uuid: \d+:(.*):\d+-\d+-\d+:client-stop-begin")
 # time="2025-04-11 07:48:05" level=info msg="👋 kube-burner run completed with rc 3 for UUID e6eec0ed-2302-40f7-bc0d-9c641fafc0d9" file="helpers.go:86"
-kubeburnerocp_completed_message_regex = re.compile(r'kube-burner run completed with rc \d+ for UUID (.*)" file="helpers.go:86"')
+kubeburnerocp_completed_message_regex = re.compile(r'kube-burner run completed with rc \d+ for UUID (.*)" file=')
 
 def _is_crucible_start_message(line):
     result = crucible_start_message_regex.search(line)
@@ -81,6 +81,12 @@ kubeburnerocp_uuid = None
 kubeburnerocp_lines = None
 kubeburnerocp_thread = None
 
+def _has_kubeburnerocp_ended(lines):
+    for line in lines:
+        if 'Stopping measurement:' in line:
+            return True
+    return False
+
 def _crucible_handler(line):
     global crucible_uuid
     global kubeburnerocp_lines
@@ -96,13 +102,13 @@ def _crucible_handler(line):
         crucible_uuid = _get_crucible_uuid(line)
         if not kubeburnerocp_thread:
             raise Exception("kubeburnerocp was not started!")
-        still_alive = kubeburnerocp_thread.is_alive()
-        if still_alive:
-            print('Crucible is done, waiting for still running kubeburnerocp')
+        still_measuring = not _has_kubeburnerocp_ended(kubeburnerocp_lines)
+        if kubeburnerocp_thread.is_alive():
+            print('Crucible is done, waiting for a running kubeburnerocp')
         kubeburnerocp_thread.join()
         kubeburnerocp_thread = None
-        if still_alive:
-            # Crucible runs have to last longer than kube-burner-ocp runs
+        if still_measuring:
+            # Crucible runs have to last longer than kube-burner-ocp runs, but kube-burner can take a long time doing GC
             raise Exception("kubeburnerocp has not finished!")
         kubeburnerocp_uuid = _get_kubeburnerocp_uuid(kubeburnerocp_lines)
 
