@@ -9,8 +9,8 @@ from datetime import datetime
 CHURN_CYCLES='5'
 PPN='50'
 
-START_CRUCIBLE_SCRIPT = './test/dummy-crucible.sh'
-START_KUBEBURNEROCP_SCRIPT = './test/dummy-kubeburnerocp.sh'
+START_CRUCIBLE_SCRIPT = './start_crucible.sh'
+START_KUBEBURNEROCP_SCRIPT = './start_kubeburnerorcp.sh'
 FILE_CSV = "CPDP_COMBINED.csv"
 
 parser = argparse.ArgumentParser()
@@ -114,7 +114,7 @@ def measure():
 
     print(f'Starting with churn_percent={args.churn_percent}')
 
-    #NB: Crucible runs have to last longer than kube-burner-ocp runs
+    # NB: Crucible runs have to last longer than kube-burner-ocp runs
     _follow('crucible', ['/bin/bash', START_CRUCIBLE_SCRIPT], _crucible_handler)
 
     if not crucible_uuid:
@@ -122,7 +122,7 @@ def measure():
     if not kubeburnerocp_uuid:
         raise Exception("Did not get a UUID from kubeburnerocp!")
     
-    # Let's put this now in a file and keep UUID pairs together
+    # Put this now in a file and keep UUID pairs together
     with open(FILE_CSV,'a', newline='') as file:
         writer = csv.writer(file, delimiter='\t')
         writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), CHURN_CYCLES, args.churn_percent, PPN, crucible_uuid, kubeburnerocp_uuid])
