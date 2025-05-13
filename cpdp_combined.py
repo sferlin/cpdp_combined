@@ -8,6 +8,9 @@ from datetime import datetime
 
 CHURN_CYCLES='5'
 PPN='50'
+#kube-burner-ocp times (sec.), baseline: 1260, 1500, 1680, 2220, 2700, 3200
+#CP+DP times (sec.): 27, 30, 38, 50, 55, 65
+CRUCIBLE_DURATION = dict([ (0, 1620), (10, 1800), (25, 2280), (50, 3000), (75, 3300), (100, 3900) ])
 
 START_CRUCIBLE_SCRIPT = './start_crucible.sh' #'./test/dummy-crucible.sh'
 START_KUBEBURNEROCP_SCRIPT = './start_kubeburnerocp.sh' #'./test/dummy-kubeburnerocp.sh'
@@ -108,7 +111,7 @@ def _crucible_handler(line):
         kubeburnerocp_thread.join()
         kubeburnerocp_thread = None
         if still_measuring:
-            # Crucible runs have to last longer than kube-burner-ocp runs, but kube-burner can take a long time doing GC
+            # Crucible runs have to last longer than kube-burner-ocp runs
             raise Exception("kubeburnerocp has not finished!")
         kubeburnerocp_uuid = _get_kubeburnerocp_uuid(kubeburnerocp_lines)
 
@@ -120,8 +123,8 @@ def measure():
 
     print(f'Starting with churn_percent={args.churn_percent}')
 
-    # NB: Crucible runs have to last longer than kube-burner-ocp runs
-    _follow('crucible', ['/bin/bash', START_CRUCIBLE_SCRIPT], _crucible_handler)
+    # NB: Crucible runs have to last longer than kube-burner-ocp runs, but kube-burner takes longer with increasing churn % and nodes
+    _follow('crucible', ['/bin/bash', START_CRUCIBLE_SCRIPT, str(CRUCIBLE_DURATION[args.churn_percent] )], _crucible_handler)
 
     if not crucible_uuid:
         raise Exception("Did not get a UUID from crucible!")
