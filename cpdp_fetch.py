@@ -1,4 +1,4 @@
-# CALL WITH: python3.11 cpdp_fetch.py
+# CALL WITH: python3.11 cpdp_fetch.py 0 or 1
 
 import argparse
 import csv
@@ -9,7 +9,13 @@ import subprocess
 import re
 import datetime
 
-GET_CRUCIBLE_METRIC_SCRIPT = './get_crucible_metric.sh'
+if False:
+    GET_CRUCIBLE_METRIC_SCRIPT = './get_crucible_metric.sh'
+    KUBEBURNEROCP_RESULTS_PREFIX = ''
+else:
+    GET_CRUCIBLE_METRIC_SCRIPT = './test/dummy-crucible-metric.sh'
+    KUBEBURNEROCP_RESULTS_PREFIX = 'test/'
+
 FILE_CSV = "CPDP_COMBINED.csv"
 
 parser = argparse.ArgumentParser()
@@ -56,7 +62,7 @@ with open(FILE_CSV, 'r', newline='') as file:
 
         [dt, churn_cycles, churn_percent, ppn, crucible_uuid, kubeburnerocp_uuid] = row
 
-        kubeburnerocp_results_path = f"collected-metrics-{kubeburnerocp_uuid}"
+        kubeburnerocp_results_path = f"{KUBEBURNEROCP_RESULTS_PREFIX}collected-metrics-{kubeburnerocp_uuid}"
         with open(os.path.join(kubeburnerocp_results_path, 'jobSummary.json'), 'r') as f:
             summary = json.loads(f.read())[0]
 
@@ -66,7 +72,7 @@ with open(FILE_CSV, 'r', newline='') as file:
             kubeburnerocp_end = isoparse(summary['churnEndTimestamp'])
             intervals.append([kubeburnerocp_start, kubeburnerocp_end])
         else:
-            kubeburnerocp_log_path = f"kube-burner-ocp-{kubeburnerocp_uuid}.log"
+            kubeburnerocp_log_path = f"{KUBEBURNEROCP_RESULTS_PREFIX}kube-burner-ocp-{kubeburnerocp_uuid}.log"
             intervals = _get_churn_intervals(kubeburnerocp_log_path)
 
         for interval in intervals:
@@ -76,16 +82,16 @@ with open(FILE_CSV, 'r', newline='') as file:
             print(f"kubeburnerocp run={kubeburnerocp_uuid} begin={begin_ts} end={end_ts}")
             samples_churn_interval = int((end_ts-begin_ts)/1000)
 
-            crucible_cmd = ['/bin/bash', GET_CRUCIBLE_METRIC_SCRIPT, "get", "metric", "--source", "uperf", "--type", "Gbps", "--run", crucible_uuid, "--begin", str(begin_ts), "--end", str(end_ts), "--output-format", "json", "--resolution", str(samples_churn_interval)]
+            crucible_cmd = ['/bin/bash', GET_CRUCIBLE_METRIC_SCRIPT, crucible_uuid, str(begin_ts), str(end_ts), str(samples_churn_interval)]
             print("Running command:", ' '.join(crucible_cmd))
             
             output = subprocess.check_output(crucible_cmd,universal_newlines=True)
             crucible_json_text = output[output.find('{'):]
             crucible_json = json.loads(crucible_json_text)
-            crucible_data = crucible_json['values'][''][0]
+            crucible_data = crucible_json['values']['']
+            # crucible_data is a list of { "begin": 1746438618045, "end": 1746439878525, "value": 22.515339753410007 }
+            values = [x['value'] for x in crucible_data]
+            print(values)
 
-            # crucible_data looks like { "begin": 1746438618045, "end": 1746439878525, "value": 22.515339753410007 }
-            print(crucible_data['value'])
-
-            break
+            break #TODO : write all periods in a dict per uuid
         break
